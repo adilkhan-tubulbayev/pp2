@@ -8,22 +8,51 @@ from config import load_config
 # P7 functions (unchanged)
 # ──────────────────────────────────────────────
 
-# Insert a single contact from console input
-def insert_contact(first_name, phone):
-    sql = "INSERT INTO phonebook(first_name, phone) VALUES(%s, %s) RETURNING id;"
+# Helper: resolve a group name to its id, creating the group if missing.
+# Returns None if name is empty.
+def _resolve_group_id(cur, group_name):
+    if not group_name:
+        return None
+    cur.execute("SELECT id FROM groups WHERE name ILIKE %s", (group_name,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+    cur.execute("INSERT INTO groups(name) VALUES(%s) RETURNING id", (group_name,))
+    return cur.fetchone()[0]
+
+
+def _clean_phone_type(phone_type):
+    if phone_type in ('home', 'work', 'mobile'):
+        return phone_type
+    return 'mobile'
+
+
+# Insert a single contact. Email, birthday, group are optional.
+def insert_contact(first_name, phone, email=None, birthday=None, group=None, phone_type='mobile'):
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (first_name, phone))
+                group_id = _resolve_group_id(cur, group)
+                cur.execute(
+                    """INSERT INTO phonebook(first_name, phone, email, birthday, group_id)
+                       VALUES(%s, %s, %s, %s, %s) RETURNING id""",
+                    (first_name, phone, email or None, birthday or None, group_id)
+                )
                 contact_id = cur.fetchone()[0]
+                cur.execute(
+                    "INSERT INTO phones(contact_id, phone, type) VALUES(%s, %s, %s)",
+                    (contact_id, phone, _clean_phone_type(phone_type))
+                )
             conn.commit()
             print(f"Inserted contact with id {contact_id}")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
 
-# Insert contacts from a CSV file (columns: first_name, phone)
+# Insert contacts from a CSV file.
+# Required: first_name, phone
+# Optional: email, birthday, group, phone_type
 def insert_from_csv(filename):
     config = load_config()
     try:
@@ -31,13 +60,27 @@ def insert_from_csv(filename):
             with conn.cursor() as cur:
                 with open(filename, 'r', encoding='utf-8') as f:
                     reader = csv.DictReader(f)
+                    inserted = 0
                     for row in reader:
+                        group_id = _resolve_group_id(cur, row.get('group', '').strip())
                         cur.execute(
-                            "INSERT INTO phonebook(first_name, phone) VALUES(%s, %s)",
-                            (row['first_name'], row['phone'])
+                            """INSERT INTO phonebook(first_name, phone, email, birthday, group_id)
+                               VALUES(%s, %s, %s, %s, %s)
+                               RETURNING id""",
+                            (row['first_name'],
+                             row['phone'],
+                             row.get('email') or None,
+                             row.get('birthday') or None,
+                             group_id)
                         )
+                        contact_id = cur.fetchone()[0]
+                        cur.execute(
+                            "INSERT INTO phones(contact_id, phone, type) VALUES(%s, %s, %s)",
+                            (contact_id, row['phone'], _clean_phone_type(row.get('phone_type', 'mobile')))
+                        )
+                        inserted += 1
             conn.commit()
-            print(f"Contacts imported from {filename}")
+            print(f"Imported {inserted} contacts from {filename}")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -50,8 +93,11 @@ def query_all():
             with conn.cursor() as cur:
                 cur.execute("SELECT id, first_name, phone FROM phonebook ORDER BY first_name")
                 rows = cur.fetchall()
-                for row in rows:
-                    print(row)
+                if rows:
+                    for row in rows:
+                        print(row)
+                else:
+                    print("No contacts found.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -67,8 +113,11 @@ def query_by_name(name):
                     ('%' + name + '%',)
                 )
                 rows = cur.fetchall()
-                for row in rows:
-                    print(row)
+                if rows:
+                    for row in rows:
+                        print(row)
+                else:
+                    print("No contacts found.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -84,8 +133,11 @@ def query_by_phone(phone_prefix):
                     (phone_prefix + '%',)
                 )
                 rows = cur.fetchall()
-                for row in rows:
-                    print(row)
+                if rows:
+                    for row in rows:
+                        print(row)
+                else:
+                    print("No contacts found.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -207,8 +259,11 @@ def sort_contacts(sort_by='name'):
                     f"SELECT id, first_name, phone, email, birthday FROM phonebook ORDER BY {column}"
                 )
                 rows = cur.fetchall()
-                for row in rows:
-                    print(row)
+                if rows:
+                    for row in rows:
+                        print(row)
+                else:
+                    print("No contacts found.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -243,15 +298,15 @@ def paginated_nav():
             break
 
 
-# Export all contacts with extra phones and group name to a JSON file
+# Export all contacts (main phone + extra phones + group) to a JSON file
 def export_json(filename='contacts.json'):
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
             with conn.cursor() as cur:
-                # Fetch all contacts with their group name
+                # Fetch all contacts including the main phone column
                 cur.execute(
-                    """SELECT p.id, p.first_name, p.email,
+                    """SELECT p.id, p.first_name, p.phone, p.email,
                               p.birthday::TEXT, g.name AS group_name
                        FROM phonebook p
                        LEFT JOIN groups g ON p.group_id = g.id
@@ -260,13 +315,21 @@ def export_json(filename='contacts.json'):
                 contacts = cur.fetchall()
 
                 result = []
-                for cid, name, email, birthday, group in contacts:
-                    # Fetch extra phone numbers for this contact
+                for cid, name, main_phone, email, birthday, group in contacts:
+                    # Fetch extra phones from the phones table
                     cur.execute(
                         "SELECT phone, type FROM phones WHERE contact_id = %s",
                         (cid,)
                     )
-                    phones = [{'phone': ph, 'type': tp} for ph, tp in cur.fetchall()]
+                    extras = [{'phone': ph, 'type': tp} for ph, tp in cur.fetchall()]
+
+                    # Include the main phone as the first item if it isn't
+                    # already in the extras list (avoids duplicates)
+                    phones = []
+                    extra_numbers = [p['phone'] for p in extras]
+                    if main_phone and main_phone not in extra_numbers:
+                        phones.append({'phone': main_phone, 'type': 'mobile'})
+                    phones.extend(extras)
 
                     result.append({
                         'name':     name,
@@ -302,13 +365,12 @@ def import_json(filename='contacts.json'):
                     birthday = contact.get('birthday')
                     group    = contact.get('group')
                     phones   = contact.get('phones', [])
+                    main_phone = phones[0]['phone'] if phones else contact.get('phone', '')
+                    if main_phone and not phones:
+                        phones = [{'phone': main_phone, 'type': 'mobile'}]
 
-                    # Resolve group id
-                    group_id = None
-                    if group:
-                        cur.execute("SELECT id FROM groups WHERE name ILIKE %s", (group,))
-                        row = cur.fetchone()
-                        group_id = row[0] if row else None
+                    # Resolve group id (creates it if missing)
+                    group_id = _resolve_group_id(cur, group)
 
                     # Check if contact already exists
                     cur.execute("SELECT id FROM phonebook WHERE first_name = %s", (name,))
@@ -318,27 +380,35 @@ def import_json(filename='contacts.json'):
                         action = input(f"'{name}' already exists. skip or overwrite? ").strip().lower()
                         if action == 'overwrite':
                             cur.execute(
-                                "UPDATE phonebook SET email=%s, birthday=%s, group_id=%s WHERE first_name=%s",
-                                (email, birthday, group_id, name)
+                                """UPDATE phonebook
+                                   SET phone=%s, email=%s, birthday=%s, group_id=%s
+                                   WHERE id=%s""",
+                                (main_phone, email, birthday, group_id, existing[0])
                             )
-                            print(f"Updated {name}")
+                            # Replace existing extra phones with the new ones
+                            cur.execute("DELETE FROM phones WHERE contact_id = %s", (existing[0],))
+                            for ph in phones:
+                                cur.execute(
+                                    "INSERT INTO phones(contact_id, phone, type) VALUES(%s, %s, %s)",
+                                    (existing[0], ph['phone'], _clean_phone_type(ph.get('type', 'mobile')))
+                                )
+                            print(f"Overwritten {name}")
                         else:
                             print(f"Skipped {name}")
                     else:
-                        # Use first phone from phones list as the main phone column
-                        main_phone = phones[0]['phone'] if phones else ''
                         cur.execute(
-                            "INSERT INTO phonebook(first_name, phone, email, birthday) VALUES(%s, %s, %s, %s)",
-                            (name, main_phone, email, birthday)
+                            """INSERT INTO phonebook(first_name, phone, email, birthday, group_id)
+                               VALUES(%s, %s, %s, %s, %s)
+                               RETURNING id""",
+                            (name, main_phone, email, birthday, group_id)
                         )
+                        contact_id = cur.fetchone()[0]
+                        for ph in phones:
+                            cur.execute(
+                                "INSERT INTO phones(contact_id, phone, type) VALUES(%s, %s, %s)",
+                                (contact_id, ph['phone'], _clean_phone_type(ph.get('type', 'mobile')))
+                            )
                         print(f"Inserted {name}")
-
-                    # Add extra phones via procedure
-                    for ph in phones:
-                        cur.execute(
-                            "CALL add_phone(%s, %s, %s)",
-                            (name, ph['phone'], ph.get('type', 'mobile'))
-                        )
 
             conn.commit()
     except (Exception, psycopg2.DatabaseError) as error:
@@ -361,17 +431,40 @@ def add_phone_menu():
         print(error)
 
 
-# Ask user for contact and group, then move the contact to that group
+# Ask user for contact name and group, then call the move_to_group procedure.
+# Procedure moves all contacts matching the given name (per TSIS-1 spec).
 def move_group_menu():
-    name  = input("Contact name: ")
-    group = input("Group name: ")
+    name = input("Contact name: ")
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
             with conn.cursor() as cur:
-                cur.execute("CALL move_to_group(%s, %s)", (name, group))
-            conn.commit()
-            print(f"Moved '{name}' to group '{group}'.")
+                # Show which contacts will be affected (case-insensitive exact match)
+                cur.execute(
+                    "SELECT id, first_name, phone FROM phonebook WHERE first_name ILIKE %s",
+                    (name,)
+                )
+                matches = cur.fetchall()
+
+            if not matches:
+                print("No contacts with that name.")
+                return
+
+            # Warn if multiple contacts share the name (procedure will move all of them)
+            if len(matches) > 1:
+                print(f"Warning: {len(matches)} contacts share this name. All will be moved:")
+                for row in matches:
+                    print(f"  id={row[0]}  name={row[1]}  phone={row[2]}")
+                if input("Continue? (yes/no): ").strip().lower() != 'yes':
+                    print("Cancelled.")
+                    return
+
+            group = input("Group name: ")
+            with psycopg2.connect(**config) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("CALL move_to_group(%s, %s)", (name, group))
+                conn.commit()
+            print(f"Moved {len(matches)} contact(s) to group '{group}'.")
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
@@ -396,37 +489,40 @@ def search_contacts(query):
 # Console menu
 # ──────────────────────────────────────────────
 
-def main():
-    while True:
-        print("\n=== PhoneBook Menu (TSIS-1) ===")
-        print("--- Basic ---")
-        print("1.  Insert contact")
-        print("2.  Import from CSV")
-        print("3.  Update contact name")
-        print("4.  Update contact phone")
-        print("5.  Show all contacts")
-        print("6.  Search by name")
-        print("7.  Search by phone prefix")
-        print("8.  Delete by name")
-        print("9.  Delete by phone")
-        print("--- Extended ---")
-        print("10. Filter by group")
-        print("11. Search by email")
-        print("12. Sort contacts")
-        print("13. Browse contacts (paginated)")
-        print("14. Export contacts to JSON")
-        print("15. Import contacts from JSON")
-        print("16. Add extra phone to contact")
-        print("17. Move contact to group")
-        print("18. Full-text search (name/email/phone)")
-        print("0.  Exit")
+def print_menu():
+    print("\n=== PhoneBook Menu (TSIS-1) ===")
+    print("")
+    print("--- Basic ---")
+    print("1.  Insert contact       2.  Import from CSV")
+    print("3.  Update name          4.  Update phone")
+    print("5.  Show all             6.  Search by name")
+    print("7.  Search by phone      8.  Delete by name")
+    print("9.  Delete by phone")
+    print("")
+    print("--- Extended ---")
+    print("10. Filter by group      11. Search by email")
+    print("12. Sort contacts        13. Browse (paginated)")
+    print("14. Export to JSON       15. Import from JSON")
+    print("16. Add extra phone      17. Move to group")
+    print("18. Full-text search")
+    print("")
+    print("--- Other ---")
+    print("0.  Exit                 ?.  Show this menu")
 
+
+def main():
+    print_menu()
+    while True:
         choice = input("\nEnter choice: ").strip()
 
         if choice == '1':
-            name  = input("Name: ")
-            phone = input("Phone: ")
-            insert_contact(name, phone)
+            name     = input("Name: ")
+            phone    = input("Phone: ")
+            ptype    = input("Phone type home/work/mobile [mobile]: ").strip().lower() or 'mobile'
+            email    = input("Email (optional): ").strip() or None
+            birthday = input("Birthday YYYY-MM-DD (optional): ").strip() or None
+            group    = input("Group (optional): ").strip() or None
+            insert_contact(name, phone, email, birthday, group, ptype)
         elif choice == '2':
             filename = input("CSV filename: ")
             insert_from_csv(filename)
@@ -472,8 +568,14 @@ def main():
         elif choice == '0':
             print("Goodbye!")
             break
+        elif choice == '?':
+            print_menu()
+            continue
         else:
             print("Invalid choice, try again.")
+            continue
+
+        input("\nPress Enter to continue...")
 
 
 if __name__ == '__main__':

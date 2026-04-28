@@ -1,4 +1,8 @@
--- Procedure: insert new contact or update phone if name already exists
+-- Drop old versions of functions that changed their return type
+DROP FUNCTION IF EXISTS get_contacts_paginated(integer, integer);
+DROP FUNCTION IF EXISTS search_contacts(text);
+
+-- Practice 8 procedure: insert new contact or update phone if name exists
 CREATE OR REPLACE PROCEDURE upsert_contact(p_name VARCHAR, p_phone VARCHAR)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -10,40 +14,28 @@ BEGIN
 END;
 $$;
 
-
--- Procedure: insert multiple contacts with basic phone validation
--- Invalid entries are skipped with a RAISE NOTICE message
+-- Practice 8 procedure: insert many contacts with simple phone validation
 CREATE OR REPLACE PROCEDURE insert_many_contacts(
     p_names  TEXT[],
     p_phones TEXT[]
 )
 LANGUAGE plpgsql AS $$
 DECLARE
-    i             INT;
-    current_name  TEXT;
-    current_phone TEXT;
+    i INT;
 BEGIN
     FOR i IN 1..array_length(p_names, 1) LOOP
-        current_name  := p_names[i];
-        current_phone := p_phones[i];
-
-        -- Phone must start with '+' followed by 10-15 digits
-        IF current_phone !~ '^\+\d{10,15}$' THEN
-            RAISE NOTICE 'Skipping invalid phone for %: %', current_name, current_phone;
+        IF p_phones[i] !~ '^\+\d{10,15}$' THEN
+            RAISE NOTICE 'Skipping invalid phone for %: %', p_names[i], p_phones[i];
+        ELSIF EXISTS (SELECT 1 FROM phonebook WHERE first_name = p_names[i]) THEN
+            UPDATE phonebook SET phone = p_phones[i] WHERE first_name = p_names[i];
         ELSE
-            -- Upsert: update if name exists, insert if not
-            IF EXISTS (SELECT 1 FROM phonebook WHERE first_name = current_name) THEN
-                UPDATE phonebook SET phone = current_phone WHERE first_name = current_name;
-            ELSE
-                INSERT INTO phonebook(first_name, phone) VALUES(current_name, current_phone);
-            END IF;
+            INSERT INTO phonebook(first_name, phone) VALUES(p_names[i], p_phones[i]);
         END IF;
     END LOOP;
 END;
 $$;
 
-
--- Procedure: delete contact by name or phone
+-- Practice 8 procedure: delete contact by name or phone
 CREATE OR REPLACE PROCEDURE delete_contact(p_value VARCHAR)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -52,8 +44,7 @@ BEGIN
 END;
 $$;
 
-
--- Function: return a page of contacts joined with their group name
+-- Paginated query used by the console next / prev loop
 CREATE OR REPLACE FUNCTION get_contacts_paginated(p_limit INT, p_offset INT)
 RETURNS TABLE(
     id         INT,
@@ -80,8 +71,7 @@ BEGIN
 END;
 $$;
 
-
--- Procedure: add an extra phone number to a contact (found by name)
+-- TSIS-1 procedure: add another phone number to an existing contact
 CREATE OR REPLACE PROCEDURE add_phone(
     p_contact_name VARCHAR,
     p_phone        VARCHAR,
@@ -91,7 +81,6 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_contact_id INT;
 BEGIN
-    -- Find the contact id by name
     SELECT id INTO v_contact_id
     FROM phonebook
     WHERE first_name ILIKE p_contact_name
@@ -106,8 +95,9 @@ BEGIN
 END;
 $$;
 
+DROP PROCEDURE IF EXISTS move_to_group(integer, varchar);
 
--- Procedure: assign a contact to a group, creating the group if it does not exist
+-- TSIS-1 procedure: move contact to a group, creating the group if needed
 CREATE OR REPLACE PROCEDURE move_to_group(
     p_contact_name VARCHAR,
     p_group_name   VARCHAR
@@ -116,21 +106,22 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_group_id INT;
 BEGIN
-    -- Get existing group id or create a new one
-    SELECT id INTO v_group_id FROM groups WHERE name ILIKE p_group_name LIMIT 1;
+    SELECT id INTO v_group_id
+    FROM groups
+    WHERE name ILIKE p_group_name
+    LIMIT 1;
 
     IF v_group_id IS NULL THEN
         INSERT INTO groups(name) VALUES(p_group_name) RETURNING id INTO v_group_id;
     END IF;
 
-    -- Update the contact's group
-    UPDATE phonebook SET group_id = v_group_id
+    UPDATE phonebook
+    SET group_id = v_group_id
     WHERE first_name ILIKE p_contact_name;
 END;
 $$;
 
-
--- Function: search contacts across name, email, and all phone numbers
+-- TSIS-1 function: search name, email, main phone, and all extra phones
 CREATE OR REPLACE FUNCTION search_contacts(p_query TEXT)
 RETURNS TABLE(
     id         INT,

@@ -1,9 +1,9 @@
 import json
 import os
 
-# File names where we store data between sessions
-SETTINGS_FILE = 'settings.json'
-LEADERBOARD_FILE = 'leaderboard.json'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
+LEADERBOARD_FILE = os.path.join(BASE_DIR, 'leaderboard.json')
 
 # These are the default values when no settings file exists yet
 DEFAULT_SETTINGS = {

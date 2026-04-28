@@ -1,5 +1,21 @@
 import psycopg2
+import os
 from config import load_config
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def init_db():
+    """Create players and game_sessions tables from schema.sql."""
+    config = load_config()
+    schema_path = os.path.join(BASE_DIR, "schema.sql")
+    with open(schema_path, "r", encoding="utf-8") as file:
+        schema_sql = file.read()
+    with psycopg2.connect(**config) as conn:
+        with conn.cursor() as cur:
+            cur.execute(schema_sql)
+        conn.commit()
+
 
 def get_or_create_player(username):
     """Insert player if not exists, return player id"""
@@ -20,7 +36,13 @@ def save_session(username, score, level):
     config = load_config()
     with psycopg2.connect(**config) as conn:
         with conn.cursor() as cur:
-            pid = get_or_create_player(username)  # get player id
+            cur.execute("SELECT id FROM players WHERE username = %s", (username,))
+            row = cur.fetchone()
+            if row:
+                pid = row[0]
+            else:
+                cur.execute("INSERT INTO players(username) VALUES(%s) RETURNING id", (username,))
+                pid = cur.fetchone()[0]
             cur.execute(
                 "INSERT INTO game_sessions(player_id, score, level_reached) VALUES(%s, %s, %s)",
                 (pid, score, level)

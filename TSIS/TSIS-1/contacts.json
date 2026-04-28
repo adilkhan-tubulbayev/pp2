@@ -1,0 +1,31 @@
+[
+  {
+    "name": "Aigerim",
+    "email": "aigerim@gmail.com",
+    "birthday": "1998-05-12",
+    "group": "Friend",
+    "phones": [
+      {"phone": "+77001112233", "type": "mobile"},
+      {"phone": "+77271234567", "type": "work"}
+    ]
+  },
+  {
+    "name": "Bekzat",
+    "email": "bekzat@mail.ru",
+    "birthday": "1995-11-30",
+    "group": "Work",
+    "phones": [
+      {"phone": "+77059998877", "type": "mobile"}
+    ]
+  },
+  {
+    "name": "Dana",
+    "email": "dana.family@gmail.com",
+    "birthday": "2000-03-07",
+    "group": "Family",
+    "phones": [
+      {"phone": "+77012223344", "type": "home"},
+      {"phone": "+77783334455", "type": "mobile"}
+    ]
+  }
+]

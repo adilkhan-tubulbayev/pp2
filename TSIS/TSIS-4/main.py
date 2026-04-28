@@ -9,7 +9,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Import DB functions (will fail gracefully if psycopg2 not installed)
 try:
-    from db import save_session, get_leaderboard, get_personal_best
+    from db import init_db, save_session, get_leaderboard, get_personal_best
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
@@ -85,14 +85,6 @@ def make_walls(level):
     for y in range(ROWS):
         walls.add((0, y))
         walls.add((COLS - 1, y))
-    # Level 2: horizontal wall across the middle
-    if level >= 2:
-        for x in range(5, 15):
-            walls.add((x, ROWS // 2))
-    # Level 3: vertical wall on the right half
-    if level >= 3:
-        for y in range(5, 15):
-            walls.add((COLS // 2, y))
     return walls
 
 def add_obstacles(walls, snake, foods, level):
@@ -388,8 +380,9 @@ def update_game(state):
             state["speed_mult"] = 0.6
             state["effect"] = {"type": "slow",   "ends_at": now + POWERUP_EFFECT_DURATION}
         elif ptype == "shield":
+            state["speed_mult"] = 1.0
             state["shield"] = True
-            state["effect"] = {"type": "shield", "ends_at": now + POWERUP_EFFECT_DURATION}
+            state["effect"] = None
         # Power-up doesn't grow snake, remove tail normally
         state["snake"].pop()
         return "alive"
@@ -432,7 +425,6 @@ def update_game(state):
     if state["effect"] and now >= state["effect"]["ends_at"]:
         state["effect"]     = None
         state["speed_mult"] = 1.0
-        state["shield"]     = False  # shield expires with effect timer too
 
     # Expire food items that ran out of time
     state["foods"] = [f for f in state["foods"]
@@ -456,6 +448,8 @@ def update_game(state):
 
     # Try to spawn a new power-up if none on field and enough time passed
     if (state["powerup"] is None and
+            state["effect"] is None and
+            not state["shield"] and
             now - state["last_pu_spawn"] >= POWERUP_SPAWN_INTERVAL):
         state["powerup"]     = spawn_powerup(state["walls"], state["snake"],
                                              state["foods"], state["poison"])
@@ -827,6 +821,12 @@ def main():
         "ui":    pygame.font.SysFont("Arial", 18),
         "small": pygame.font.SysFont("Arial", 13, bold=True),
     }
+
+    if DB_AVAILABLE:
+        try:
+            init_db()
+        except:
+            pass
 
     settings = load_settings()
     state    = "menu"

@@ -1,3 +1,11 @@
+-- Base table from Practice 7. Keeping the old table name makes old code work.
+CREATE TABLE IF NOT EXISTS phonebook (
+    id         SERIAL PRIMARY KEY,
+    first_name VARCHAR(100) NOT NULL,
+    phone      VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- Create groups table for contact categorization
 CREATE TABLE IF NOT EXISTS groups (
     id   SERIAL PRIMARY KEY,

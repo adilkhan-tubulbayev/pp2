@@ -1,9 +1,12 @@
 import pygame
 import random
 import time
+import os
 
 # Screen dimensions (must match main.py)
 W, H = 500, 700
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FINISH_DISTANCE = 3000 * 100
 
 # Maps setting string to an actual RGB color for the player car
 CAR_COLORS = {
@@ -14,9 +17,9 @@ CAR_COLORS = {
 
 # How often obstacles and extra enemies spawn per frame for each difficulty
 DIFF_SETTINGS = {
-    "easy":   {"obstacle_rate": 0.003},
-    "normal": {"obstacle_rate": 0.006},
-    "hard":   {"obstacle_rate": 0.012},
+    "easy":   {"obstacle_rate": 0.003, "powerup_rate": 0.004, "max_enemies": 4},
+    "normal": {"obstacle_rate": 0.006, "powerup_rate": 0.003, "max_enemies": 5},
+    "hard":   {"obstacle_rate": 0.010, "powerup_rate": 0.002, "max_enemies": 6},
 }
 
 
@@ -49,7 +52,7 @@ class Game:
     def _load_car_img(self, path, w, h, fallback_color):
         """Try to load a PNG. If not found, draw a simple car shape instead."""
         try:
-            img = pygame.image.load(path).convert_alpha()
+            img = pygame.image.load(os.path.join(BASE_DIR, path)).convert_alpha()
             return pygame.transform.scale(img, (w, h))
         except Exception:
             # Build a surface that looks vaguely like a car
@@ -79,6 +82,7 @@ class Game:
         self.score       = 0   # increments each time an enemy passes
         self.coins_total = 0   # total coin value collected
         self.distance    = 0   # pixels scrolled (converted to metres for display)
+        self.powerup_bonus = 0
 
         # Speed values – both increase as the game progresses
         self.base_speed  = 5   # slowly drifts up over time
@@ -174,6 +178,14 @@ class Game:
             "spawn_time": time.time(),
         }
 
+    def _current_obstacle_rate(self):
+        """Obstacle frequency grows with distance so difficulty scales during play."""
+        extra_rate = min(0.012, self.distance / 100000 * 0.001)
+        return self.diff["obstacle_rate"] + extra_rate
+
+    def _current_score(self):
+        return self.score * 10 + self.distance // 100 + self.coins_total * 5 + self.powerup_bonus
+
     # ------------------------------------------------------------------
     # Main game loop
     # ------------------------------------------------------------------
@@ -211,6 +223,8 @@ class Game:
 
             # --- Distance tracker ---
             self.distance += current_speed
+            if self.distance >= FINISH_DISTANCE:
+                return self._build_result()
 
             # --- Move enemies downward ---
             for e in self.enemies:
@@ -221,8 +235,8 @@ class Game:
                     self.score += 1  # player survived one enemy pass
                     e.topleft = self._spawn_enemy().topleft
 
-                    # Every 10 dodges, add one more enemy (max 5 total)
-                    if self.score % 10 == 0 and len(self.enemies) < 5:
+                    # Every 10 dodges, add one more enemy up to the difficulty limit
+                    if self.score % 10 == 0 and len(self.enemies) < self.diff["max_enemies"]:
                         self.enemies.append(self._spawn_enemy())
 
                 # Check if enemy hit the player
@@ -259,7 +273,7 @@ class Game:
                     c.update(self._spawn_coin())  # replace collected coin
 
             # --- Spawn and move obstacles ---
-            if random.random() < self.diff["obstacle_rate"]:
+            if random.random() < self._current_obstacle_rate():
                 self.obstacles.append(self._spawn_obstacle())
 
             for obs in self.obstacles[:]:
@@ -288,7 +302,10 @@ class Game:
                     self.obstacles.remove(obs)
 
             # --- Spawn and move power-ups ---
-            if random.random() < 0.003 and len(self.powerups) < 2:
+            if (random.random() < self.diff["powerup_rate"] and
+                    len(self.powerups) == 0 and
+                    self.active_powerup is None and
+                    not self.shield_active):
                 self.powerups.append(self._spawn_powerup())
 
             for pw in self.powerups[:]:
@@ -304,10 +321,13 @@ class Game:
                     ptype = pw["type"]
                     if ptype == "nitro":
                         self.active_powerup = {"type": "nitro", "end_time": time.time() + 4}
+                        self.powerup_bonus += 20
                     elif ptype == "shield":
                         self.shield_active = True
+                        self.powerup_bonus += 10
                     elif ptype == "repair":
-                        self.oil_end = 0  # clear oil effect immediately
+                        self.oil_end = 0  # repair clears one bad effect immediately
+                        self.powerup_bonus += 10
                     self.powerups.remove(pw)
 
             # --- Expire the active power-up when its timer runs out ---
@@ -325,7 +345,7 @@ class Game:
     def _build_result(self):
         """Package the end-of-game statistics into a dict."""
         return {
-            "score":    self.score + self.distance // 100,
+            "score":    self._current_score(),
             "distance": self.distance,
             "coins":    self.coins_total,
             "username": self.username,
@@ -382,9 +402,11 @@ class Game:
         self.screen.blit(self.player_img, self.player)
 
         # --- HUD (top-left corner) ---
-        self.screen.blit(self.font.render(f"Score: {self.score}",              True, (255, 255, 255)), (35, 10))
+        self.screen.blit(self.font.render(f"Score: {self._current_score()}",   True, (255, 255, 255)), (35, 10))
         self.screen.blit(self.font.render(f"Coins: {self.coins_total}",        True, (255, 220, 0)),   (35, 35))
         self.screen.blit(self.font.render(f"Dist:  {self.distance // 100}m",   True, (200, 200, 200)), (35, 60))
+        left = max(0, (FINISH_DISTANCE - self.distance) // 100)
+        self.screen.blit(self.font.render(f"Left:  {left}m",                   True, (180, 220, 255)), (35, 85))
         self.screen.blit(self.font.render(f"Spd: {self.enemy_speed}",          True, (255, 100, 100)), (W - 120, 10))
 
         # --- Active power-up timer (centre top) ---
