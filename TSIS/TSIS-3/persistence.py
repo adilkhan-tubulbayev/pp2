@@ -2,8 +2,9 @@ import json
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
-LEADERBOARD_FILE = os.path.join(BASE_DIR, 'leaderboard.json')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
+LEADERBOARD_FILE = os.path.join(DATA_DIR, 'leaderboard.json')
 
 # These are the default values when no settings file exists yet
 DEFAULT_SETTINGS = {
@@ -23,6 +24,7 @@ def load_settings():
 
 def save_settings(settings):
     """Write settings dict to the JSON file."""
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(settings, f, indent=2)
 
@@ -37,6 +39,7 @@ def load_leaderboard():
 
 def save_leaderboard(entries):
     """Sort entries by score descending and keep only the top 10."""
+    os.makedirs(DATA_DIR, exist_ok=True)
     entries.sort(key=lambda x: x['score'], reverse=True)
     with open(LEADERBOARD_FILE, 'w') as f:
         json.dump(entries[:10], f, indent=2)

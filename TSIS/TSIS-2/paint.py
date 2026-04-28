@@ -7,6 +7,7 @@ from tools import draw_shape, flood_fill
 
 pygame.init()
 
+# Window, toolbar, canvas, and save location.
 SCREEN_WIDTH = 1100
 SCREEN_HEIGHT = 720
 TOOLBAR_HEIGHT = 105
@@ -16,6 +17,7 @@ SAVE_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "saved_im
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("TSIS 2 Paint")
 
+# Canvas is separate from the screen so previews do not become permanent.
 canvas = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT - TOOLBAR_HEIGHT))
 canvas.fill(CANVAS_COLOR)
 
@@ -24,6 +26,7 @@ small_font = pygame.font.SysFont("Arial", 11)
 text_font = pygame.font.SysFont("Arial", 24)
 status_font = pygame.font.SysFont("Arial", 14)
 
+# Tool list: internal name, keyboard shortcut, and button label.
 tools = [
     ("pencil", pygame.K_p, "P Pencil"),
     ("line", pygame.K_l, "L Line"),
@@ -38,6 +41,7 @@ tools = [
     ("text", pygame.K_x, "X Text"),
 ]
 
+# Click-and-drag tools use the same start and end point logic.
 shape_tools = {
     "line",
     "rectangle",
@@ -64,18 +68,22 @@ brush_sizes = [
     (10, pygame.K_3, "3 Large"),
 ]
 
+# Current drawing state.
 current_tool = "pencil"
 current_color = (0, 0, 0)
 brush_size = 5
 
+# Mouse state used while dragging.
 drawing = False
 start_pos = None
 previous_pos = None
 
+# Text tool state. Text is previewed first and saved on Enter.
 text_active = False
 text_pos = None
 text_value = ""
 
+# Small toolbar message shown after saving.
 message = ""
 message_until = 0
 tool_buttons = []
@@ -86,15 +94,18 @@ save_button = pygame.Rect(0, 0, 0, 0)
 
 
 def screen_to_canvas(screen_x, screen_y):
+    """Convert window coordinates to canvas coordinates."""
     return screen_x, screen_y - TOOLBAR_HEIGHT
 
 
 def is_on_canvas(pos):
+    """Return True when the mouse is inside the drawable area."""
     x, y = screen_to_canvas(pos[0], pos[1])
     return 0 <= x < canvas.get_width() and 0 <= y < canvas.get_height()
 
 
 def add_tool_buttons():
+    """Build all toolbar button rectangles once at startup."""
     global clear_button, save_button
 
     x = 8
@@ -135,6 +146,7 @@ def add_tool_buttons():
 
 
 def draw_button(rect, label, active=False):
+    """Draw one simple toolbar button."""
     if active:
         background = (70, 120, 210)
         text_color = (255, 255, 255)
@@ -152,6 +164,7 @@ def draw_button(rect, label, active=False):
 
 
 def draw_toolbar():
+    """Draw tool buttons, colors, brush sizes, and status text."""
     pygame.draw.rect(screen, (235, 235, 235), (0, 0, SCREEN_WIDTH, TOOLBAR_HEIGHT))
     pygame.draw.line(screen, (150, 150, 150), (0, TOOLBAR_HEIGHT - 1), (SCREEN_WIDTH, TOOLBAR_HEIGHT - 1))
 
@@ -182,6 +195,7 @@ def draw_toolbar():
 
 
 def save_canvas():
+    """Save canvas as a timestamped PNG file."""
     global message, message_until
 
     os.makedirs(SAVE_FOLDER, exist_ok=True)
@@ -208,6 +222,7 @@ while running:
             running = False
 
         elif event.type == pygame.KEYDOWN:
+            # While typing, keyboard input belongs to the text tool only.
             if text_active:
                 if event.key == pygame.K_RETURN:
                     rendered_text = text_font.render(text_value, True, current_color)
@@ -227,11 +242,13 @@ while running:
                 save_canvas()
                 continue
 
+            # Tool shortcuts: P, L, R, O, S, T, G, D, E, F, X.
             for tool_name, key, label in tools:
                 if event.key == key:
                     current_tool = tool_name
                     break
 
+            # Brush size shortcuts: 1, 2, 3.
             for size_px, key, label in brush_sizes:
                 if event.key == key:
                     brush_size = size_px
@@ -240,6 +257,7 @@ while running:
                 canvas.fill(CANVAS_COLOR)
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            # Toolbar clicks change tool/color/size or run clear/save.
             if mouse_pos[1] < TOOLBAR_HEIGHT:
                 for rect, tool_name, label in tool_buttons:
                     if rect.collidepoint(mouse_pos):
@@ -278,6 +296,7 @@ while running:
             if drawing and is_on_canvas(mouse_pos):
                 current_x, current_y = screen_to_canvas(*mouse_pos)
 
+                # Pencil and eraser draw continuously between mouse positions.
                 if current_tool == "pencil":
                     pygame.draw.line(canvas, current_color, previous_pos, (current_x, current_y), brush_size)
                 elif current_tool == "eraser":
@@ -289,6 +308,7 @@ while running:
             if drawing:
                 end_x, end_y = screen_to_canvas(*mouse_pos)
 
+                # Shapes are committed to the canvas only on mouse release.
                 if current_tool in shape_tools:
                     draw_shape(canvas, current_tool, current_color, brush_size, start_pos, (end_x, end_y))
 
@@ -298,12 +318,14 @@ while running:
 
     screen.blit(canvas, (0, TOOLBAR_HEIGHT))
 
+    # Live shape preview is drawn on the screen, not on the canvas.
     if drawing and current_tool in shape_tools and start_pos:
         canvas_mouse = screen_to_canvas(*mouse_pos)
         preview_start = (start_pos[0], start_pos[1] + TOOLBAR_HEIGHT)
         preview_end = (canvas_mouse[0], canvas_mouse[1] + TOOLBAR_HEIGHT)
         draw_shape(screen, current_tool, current_color, brush_size, preview_start, preview_end)
 
+    # Text preview is also temporary until Enter is pressed.
     if text_active and text_pos:
         cursor = "|" if pygame.time.get_ticks() // 500 % 2 == 0 else ""
         preview_text = text_font.render(text_value + cursor, True, current_color)

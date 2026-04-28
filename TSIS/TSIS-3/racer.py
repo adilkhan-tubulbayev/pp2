@@ -6,6 +6,7 @@ import os
 # Screen dimensions (must match main.py)
 W, H = 500, 700
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSET_DIR = os.path.join(BASE_DIR, "assets")
 FINISH_DISTANCE = 3000 * 100
 
 # Maps setting string to an actual RGB color for the player car
@@ -52,7 +53,7 @@ class Game:
     def _load_car_img(self, path, w, h, fallback_color):
         """Try to load a PNG. If not found, draw a simple car shape instead."""
         try:
-            img = pygame.image.load(os.path.join(BASE_DIR, path)).convert_alpha()
+            img = pygame.image.load(os.path.join(ASSET_DIR, path)).convert_alpha()
             return pygame.transform.scale(img, (w, h))
         except Exception:
             # Build a surface that looks vaguely like a car
