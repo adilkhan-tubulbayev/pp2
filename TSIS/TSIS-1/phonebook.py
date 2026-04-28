@@ -46,7 +46,7 @@ def insert_contact(first_name, phone, email=None, birthday=None, group=None, pho
         print(error)
 
 
-# CSV import accepts the small sample file used for defence.
+# CSV import reads the sample file and any CSV with the same columns.
 # Required columns: first_name, phone. Extra columns are optional.
 def insert_from_csv(filename):
     config = load_config()
@@ -403,7 +403,7 @@ def import_json(filename='contacts.json'):
         print(error)
 
 
-# Menu wrapper around the add_phone procedure.
+# Menu code for the add_phone procedure.
 def add_phone_menu():
     name  = input("Contact name: ")
     phone = input("Phone number: ")

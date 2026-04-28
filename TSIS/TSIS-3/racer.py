@@ -309,6 +309,8 @@ class Game:
                         self.shield_active = True
                         self.powerup_bonus += 10
                     elif ptype == "repair":
+                        if self.obstacles:
+                            self.obstacles.pop(0)
                         self.oil_end = 0
                         self.powerup_bonus += 10
                     self._play_sound("powerup")

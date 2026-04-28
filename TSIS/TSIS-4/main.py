@@ -100,12 +100,18 @@ def make_walls(level):
         walls.add((COLS - 1, y))
     return walls
 
-def add_obstacles(walls, snake, foods, level):
+def add_obstacles(walls, snake, foods, level, poison_food=None, powerup=None):
     """Add random blocks after level 2."""
     count = (level - 2) * 3
     added = 0
     attempts = 0
     food_positions = [f["pos"] for f in foods]
+    blocked = set(food_positions)
+    if poison_food:
+        blocked.add(poison_food["pos"])
+    if powerup:
+        blocked.add(powerup["pos"])
+
     while added < count and attempts < 500:
         attempts += 1
         x = random.randint(2, COLS - 3)
@@ -116,7 +122,7 @@ def add_obstacles(walls, snake, foods, level):
             continue
         if pos in walls:
             continue
-        if pos in food_positions:
+        if pos in blocked:
             continue
         walls.add(pos)
         added += 1
@@ -404,7 +410,8 @@ def update_game(state):
         state["walls"] = make_walls(state["level"])
         if state["level"] >= 3:
             state["walls"] = add_obstacles(state["walls"], state["snake"],
-                                           state["foods"], state["level"])
+                                           state["foods"], state["level"],
+                                           state["poison"], state["powerup"])
 
     if state["effect"] and now >= state["effect"]["ends_at"]:
         state["effect"]     = None
@@ -750,7 +757,7 @@ def main():
     pygame.display.set_caption("Snake — TSIS-4")
     clock = pygame.time.Clock()
 
-    # System fonts are enough for this defence project.
+    # Built-in fonts are enough here.
     fonts = {
         "title": pygame.font.SysFont("Arial", 64, bold=True),
         "big":   pygame.font.SysFont("Arial", 36, bold=True),
