@@ -3,7 +3,7 @@ import pygame
 
 
 def flood_fill(surface, start_x, start_y, fill_color):
-    """Fill the clicked area while the pixel color is exactly the same."""
+    """Flood fill from one pixel using exact color matching."""
     width, height = surface.get_size()
 
     if not (0 <= start_x < width and 0 <= start_y < height):
@@ -36,7 +36,7 @@ def flood_fill(surface, start_x, start_y, fill_color):
 
 
 def draw_shape(surface, tool, color, size, start_pos, end_pos):
-    """Draw one selected shape from start_pos to end_pos."""
+    """Shared drawing code for line and shape tools."""
     start_x, start_y = start_pos
     end_x, end_y = end_pos
 

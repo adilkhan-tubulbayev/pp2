@@ -1,8 +1,8 @@
--- Drop old versions of functions that changed their return type
+-- Recreate functions cleanly when their return columns change.
 DROP FUNCTION IF EXISTS get_contacts_paginated(integer, integer);
 DROP FUNCTION IF EXISTS search_contacts(text);
 
--- Practice 8 procedure: insert new contact or update phone if name exists
+-- Insert by name, or update the phone if that name already exists.
 CREATE OR REPLACE PROCEDURE upsert_contact(p_name VARCHAR, p_phone VARCHAR)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -14,7 +14,7 @@ BEGIN
 END;
 $$;
 
--- Practice 8 procedure: insert many contacts with simple phone validation
+-- Batch insert with basic phone validation.
 CREATE OR REPLACE PROCEDURE insert_many_contacts(
     p_names  TEXT[],
     p_phones TEXT[]
@@ -35,7 +35,7 @@ BEGIN
 END;
 $$;
 
--- Practice 8 procedure: delete contact by name or phone
+-- Delete accepts either the contact name or the main phone number.
 CREATE OR REPLACE PROCEDURE delete_contact(p_value VARCHAR)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -44,7 +44,7 @@ BEGIN
 END;
 $$;
 
--- Paginated query used by the console next / prev loop
+-- The menu uses this for next/prev contact browsing.
 CREATE OR REPLACE FUNCTION get_contacts_paginated(p_limit INT, p_offset INT)
 RETURNS TABLE(
     id         INT,
@@ -71,7 +71,7 @@ BEGIN
 END;
 $$;
 
--- TSIS-1 procedure: add another phone number to an existing contact
+-- Add another phone number to a contact found by name.
 CREATE OR REPLACE PROCEDURE add_phone(
     p_contact_name VARCHAR,
     p_phone        VARCHAR,
@@ -97,7 +97,7 @@ $$;
 
 DROP PROCEDURE IF EXISTS move_to_group(integer, varchar);
 
--- TSIS-1 procedure: move contact to a group, creating the group if needed
+-- Move all matching names into a group, creating the group if needed.
 CREATE OR REPLACE PROCEDURE move_to_group(
     p_contact_name VARCHAR,
     p_group_name   VARCHAR
@@ -121,7 +121,7 @@ BEGIN
 END;
 $$;
 
--- TSIS-1 function: search name, email, main phone, and all extra phones
+-- Search across the fields a user would normally remember.
 CREATE OR REPLACE FUNCTION search_contacts(p_query TEXT)
 RETURNS TABLE(
     id         INT,

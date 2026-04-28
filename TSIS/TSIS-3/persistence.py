@@ -6,7 +6,7 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 SETTINGS_FILE = os.path.join(DATA_DIR, 'settings.json')
 LEADERBOARD_FILE = os.path.join(DATA_DIR, 'leaderboard.json')
 
-# These are the default values when no settings file exists yet
+# First run defaults.
 DEFAULT_SETTINGS = {
     "sound": False,
     "car_color": "blue",    # choices: blue, red, green
@@ -15,7 +15,7 @@ DEFAULT_SETTINGS = {
 
 
 def load_settings():
-    """Load settings from file. If file missing, return defaults."""
+    """Read settings.json, or use defaults on the first run."""
     if os.path.exists(SETTINGS_FILE):
         with open(SETTINGS_FILE) as f:
             return json.load(f)
@@ -23,14 +23,14 @@ def load_settings():
 
 
 def save_settings(settings):
-    """Write settings dict to the JSON file."""
+    """Save menu settings between runs."""
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(settings, f, indent=2)
 
 
 def load_leaderboard():
-    """Load leaderboard list from file. Returns empty list if file missing."""
+    """Read saved scores, or start with an empty board."""
     if os.path.exists(LEADERBOARD_FILE):
         with open(LEADERBOARD_FILE) as f:
             return json.load(f)
@@ -38,7 +38,7 @@ def load_leaderboard():
 
 
 def save_leaderboard(entries):
-    """Sort entries by score descending and keep only the top 10."""
+    """Keep only the best ten results in the JSON file."""
     os.makedirs(DATA_DIR, exist_ok=True)
     entries.sort(key=lambda x: x['score'], reverse=True)
     with open(LEADERBOARD_FILE, 'w') as f:

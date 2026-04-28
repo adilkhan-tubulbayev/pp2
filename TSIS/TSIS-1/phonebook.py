@@ -4,12 +4,7 @@ import json
 from config import load_config
 
 
-# ──────────────────────────────────────────────
-# P7 functions (unchanged)
-# ──────────────────────────────────────────────
-
-# Helper: resolve a group name to its id, creating the group if missing.
-# Returns None if name is empty.
+# Keeps group handling in one place. New group names are created on import/insert.
 def _resolve_group_id(cur, group_name):
     if not group_name:
         return None
@@ -27,7 +22,8 @@ def _clean_phone_type(phone_type):
     return 'mobile'
 
 
-# Insert a single contact. Email, birthday, group are optional.
+# Basic insert used by the menu. The same phone is stored in both tables:
+# phonebook keeps the main number, phones keeps the typed phone category.
 def insert_contact(first_name, phone, email=None, birthday=None, group=None, phone_type='mobile'):
     config = load_config()
     try:
@@ -50,9 +46,8 @@ def insert_contact(first_name, phone, email=None, birthday=None, group=None, pho
         print(error)
 
 
-# Insert contacts from a CSV file.
-# Required: first_name, phone
-# Optional: email, birthday, group, phone_type
+# CSV import accepts the small sample file used for defence.
+# Required columns: first_name, phone. Extra columns are optional.
 def insert_from_csv(filename):
     config = load_config()
     try:
@@ -85,7 +80,7 @@ def insert_from_csv(filename):
         print(error)
 
 
-# Query all contacts ordered by name
+# Simple list view for checking what is already in the table.
 def query_all():
     config = load_config()
     try:
@@ -102,7 +97,7 @@ def query_all():
         print(error)
 
 
-# Query contacts whose name contains the given string
+# ILIKE makes the name search case-insensitive.
 def query_by_name(name):
     config = load_config()
     try:
@@ -122,7 +117,7 @@ def query_by_name(name):
         print(error)
 
 
-# Query contacts whose phone starts with the given prefix
+# Prefix search is useful for checking country/operator codes.
 def query_by_phone(phone_prefix):
     config = load_config()
     try:
@@ -142,7 +137,7 @@ def query_by_phone(phone_prefix):
         print(error)
 
 
-# Update a contact's name by id
+# Updates by id avoid changing several people with the same name.
 def update_name(contact_id, new_name):
     config = load_config()
     try:
@@ -156,7 +151,7 @@ def update_name(contact_id, new_name):
         print(error)
 
 
-# Update a contact's phone by id
+# This updates the main phone stored in phonebook.
 def update_phone(contact_id, new_phone):
     config = load_config()
     try:
@@ -170,7 +165,7 @@ def update_phone(contact_id, new_phone):
         print(error)
 
 
-# Delete a contact by exact name
+# Kept from the basic phonebook task.
 def delete_by_name(name):
     config = load_config()
     try:
@@ -184,7 +179,7 @@ def delete_by_name(name):
         print(error)
 
 
-# Delete a contact by exact phone number
+# Exact phone delete is safer than deleting by prefix.
 def delete_by_phone(phone):
     config = load_config()
     try:
@@ -198,11 +193,7 @@ def delete_by_phone(phone):
         print(error)
 
 
-# ──────────────────────────────────────────────
-# New functions (TSIS-1)
-# ──────────────────────────────────────────────
-
-# Return all contacts that belong to the given group
+# Group is stored by id, so this query joins groups to show readable data.
 def filter_by_group(group_name):
     config = load_config()
     try:
@@ -224,7 +215,7 @@ def filter_by_group(group_name):
         print(error)
 
 
-# Search contacts whose email contains the given substring
+# Email search is separate because the original phonebook only searched names/phones.
 def search_by_email(email_part):
     config = load_config()
     try:
@@ -243,7 +234,7 @@ def search_by_email(email_part):
         print(error)
 
 
-# List all contacts sorted by name, birthday, or creation date
+# Only mapped column names are allowed here, so the ORDER BY is still safe.
 def sort_contacts(sort_by='name'):
     order_map = {
         'name':     'first_name',
@@ -268,7 +259,7 @@ def sort_contacts(sort_by='name'):
         print(error)
 
 
-# Browse contacts page by page using get_contacts_paginated()
+# Pagination is done in SQL with limit and offset; this loop only moves the offset.
 def paginated_nav():
     page_size = 5
     offset = 0
@@ -298,13 +289,13 @@ def paginated_nav():
             break
 
 
-# Export all contacts (main phone + extra phones + group) to a JSON file
+# JSON export keeps the main contact data and all phone numbers together.
 def export_json(filename='contacts.json'):
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
             with conn.cursor() as cur:
-                # Fetch all contacts including the main phone column
+                # Start with one row per contact.
                 cur.execute(
                     """SELECT p.id, p.first_name, p.phone, p.email,
                               p.birthday::TEXT, g.name AS group_name
@@ -316,15 +307,14 @@ def export_json(filename='contacts.json'):
 
                 result = []
                 for cid, name, main_phone, email, birthday, group in contacts:
-                    # Fetch extra phones from the phones table
+                    # Then collect all phone records that belong to this contact.
                     cur.execute(
                         "SELECT phone, type FROM phones WHERE contact_id = %s",
                         (cid,)
                     )
                     extras = [{'phone': ph, 'type': tp} for ph, tp in cur.fetchall()]
 
-                    # Include the main phone as the first item if it isn't
-                    # already in the extras list (avoids duplicates)
+                    # Old records may only have phonebook.phone, so add it if needed.
                     phones = []
                     extra_numbers = [p['phone'] for p in extras]
                     if main_phone and main_phone not in extra_numbers:
@@ -346,7 +336,7 @@ def export_json(filename='contacts.json'):
         print(error)
 
 
-# Import contacts from a JSON file, asking user about duplicates
+# JSON import asks before overwriting an existing name.
 def import_json(filename='contacts.json'):
     try:
         with open(filename, 'r', encoding='utf-8') as f:
@@ -369,10 +359,8 @@ def import_json(filename='contacts.json'):
                     if main_phone and not phones:
                         phones = [{'phone': main_phone, 'type': 'mobile'}]
 
-                    # Resolve group id (creates it if missing)
                     group_id = _resolve_group_id(cur, group)
 
-                    # Check if contact already exists
                     cur.execute("SELECT id FROM phonebook WHERE first_name = %s", (name,))
                     existing = cur.fetchone()
 
@@ -385,7 +373,7 @@ def import_json(filename='contacts.json'):
                                    WHERE id=%s""",
                                 (main_phone, email, birthday, group_id, existing[0])
                             )
-                            # Replace existing extra phones with the new ones
+                            # Overwrite means the JSON file becomes the source of truth.
                             cur.execute("DELETE FROM phones WHERE contact_id = %s", (existing[0],))
                             for ph in phones:
                                 cur.execute(
@@ -415,7 +403,7 @@ def import_json(filename='contacts.json'):
         print(error)
 
 
-# Ask user for contact details and add an extra phone number via procedure
+# Menu wrapper around the add_phone procedure.
 def add_phone_menu():
     name  = input("Contact name: ")
     phone = input("Phone number: ")
@@ -431,15 +419,13 @@ def add_phone_menu():
         print(error)
 
 
-# Ask user for contact name and group, then call the move_to_group procedure.
-# Procedure moves all contacts matching the given name (per TSIS-1 spec).
+# The SQL procedure moves by name, so this menu warns before changing duplicates.
 def move_group_menu():
     name = input("Contact name: ")
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
             with conn.cursor() as cur:
-                # Show which contacts will be affected (case-insensitive exact match)
                 cur.execute(
                     "SELECT id, first_name, phone FROM phonebook WHERE first_name ILIKE %s",
                     (name,)
@@ -450,7 +436,6 @@ def move_group_menu():
                 print("No contacts with that name.")
                 return
 
-            # Warn if multiple contacts share the name (procedure will move all of them)
             if len(matches) > 1:
                 print(f"Warning: {len(matches)} contacts share this name. All will be moved:")
                 for row in matches:
@@ -469,7 +454,7 @@ def move_group_menu():
         print(error)
 
 
-# Search contacts using the search_contacts() DB function
+# Database function searches main fields and extra phone numbers in one place.
 def search_contacts(query):
     config = load_config()
     try:
@@ -484,10 +469,6 @@ def search_contacts(query):
     except (Exception, psycopg2.DatabaseError) as error:
         print(error)
 
-
-# ──────────────────────────────────────────────
-# Console menu
-# ──────────────────────────────────────────────
 
 def print_menu():
     print("\n=== PhoneBook Menu (TSIS-1) ===")

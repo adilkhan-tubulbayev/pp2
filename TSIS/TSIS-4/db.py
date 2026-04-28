@@ -6,7 +6,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def init_db():
-    """Create players and game_sessions tables from schema.sql."""
+    """Run schema.sql so the game can save scores."""
     config = load_config()
     schema_path = os.path.join(BASE_DIR, "schema.sql")
     with open(schema_path, "r", encoding="utf-8") as file:
@@ -18,7 +18,7 @@ def init_db():
 
 
 def get_or_create_player(username):
-    """Insert player if not exists, return player id"""
+    """Return the player id, creating the player when needed."""
     config = load_config()
     with psycopg2.connect(**config) as conn:
         with conn.cursor() as cur:
@@ -32,7 +32,7 @@ def get_or_create_player(username):
     return pid
 
 def save_session(username, score, level):
-    """Save game result to game_sessions"""
+    """Store one finished game."""
     config = load_config()
     with psycopg2.connect(**config) as conn:
         with conn.cursor() as cur:
@@ -50,7 +50,7 @@ def save_session(username, score, level):
         conn.commit()
 
 def get_leaderboard(limit=10):
-    """Get top scores: returns list of (username, score, level, date)"""
+    """Read the best scores for the leaderboard screen."""
     config = load_config()
     with psycopg2.connect(**config) as conn:
         with conn.cursor() as cur:
@@ -64,7 +64,7 @@ def get_leaderboard(limit=10):
             return cur.fetchall()
 
 def get_personal_best(username):
-    """Get highest score for this player, or 0 if none"""
+    """Return this player's best score, or zero before their first game."""
     config = load_config()
     try:
         with psycopg2.connect(**config) as conn:
