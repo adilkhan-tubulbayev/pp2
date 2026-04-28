@@ -7,6 +7,7 @@ import os
 W, H = 500, 700
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = os.path.join(BASE_DIR, "assets")
+SOUND_DIR = os.path.join(ASSET_DIR, "sounds")
 FINISH_DISTANCE = 3000 * 100
 
 # Settings store color names, pygame needs RGB values.
@@ -32,6 +33,13 @@ class Game:
         self.clock    = clock
         self.settings = settings
         self.username = username
+        self.sound_on = settings.get("sound", False)
+        if self.sound_on and not pygame.mixer.get_init():
+            try:
+                pygame.mixer.init()
+            except pygame.error:
+                self.sound_on = False
+        self.sounds = self._load_sounds()
 
         self.font       = pygame.font.SysFont("Verdana", 20)
         self.font_small = pygame.font.SysFont("Verdana", 16)
@@ -53,6 +61,24 @@ class Game:
             pygame.draw.rect(surf, fallback_color, (0, 0, w, h), border_radius=6)
             pygame.draw.rect(surf, (200, 200, 200), (5, 5, w - 10, 20))
             return surf
+
+    def _load_sounds(self):
+        """Load short sound effects when sound is enabled in settings."""
+        if not self.sound_on or not pygame.mixer.get_init():
+            return {}
+
+        sounds = {}
+        for name in ("coin", "powerup", "crash", "finish"):
+            path = os.path.join(SOUND_DIR, f"{name}.wav")
+            try:
+                sounds[name] = pygame.mixer.Sound(path)
+            except pygame.error:
+                pass
+        return sounds
+
+    def _play_sound(self, name):
+        if self.sound_on and name in self.sounds:
+            self.sounds[name].play()
 
     def reset(self):
         # The player starts low enough to have time to react.
@@ -188,6 +214,7 @@ class Game:
 
             self.distance += current_speed
             if self.distance >= FINISH_DISTANCE:
+                self._play_sound("finish")
                 return self._build_result()
 
             for e in self.enemies:
@@ -207,6 +234,7 @@ class Game:
                         self.shield_active = False
                         e.topleft = self._spawn_enemy().topleft
                     else:
+                        self._play_sound("crash")
                         return self._build_result()
 
             for c in self.coins:
@@ -228,6 +256,7 @@ class Game:
                     if self.coins_total // 5 > old_total // 5:
                         self.enemy_speed += 1
 
+                    self._play_sound("coin")
                     c.update(self._spawn_coin())
 
             if random.random() < self._current_obstacle_rate():
@@ -246,6 +275,7 @@ class Game:
                         if self.shield_active:
                             self.shield_active = False
                         else:
+                            self._play_sound("crash")
                             return self._build_result()
                     elif otype == "oil":
                         self.oil_end = time.time() + 2
@@ -281,6 +311,7 @@ class Game:
                     elif ptype == "repair":
                         self.oil_end = 0
                         self.powerup_bonus += 10
+                    self._play_sound("powerup")
                     self.powerups.remove(pw)
 
             if self.active_powerup and time.time() > self.active_powerup["end_time"]:

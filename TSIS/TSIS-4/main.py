@@ -46,6 +46,7 @@ POWERUP_LIFETIME       = 8000
 POWERUP_EFFECT_DURATION = 5000
 
 SETTINGS_FILE = "settings.json"
+SOUND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sounds")
 
 def load_settings():
     """Read settings.json, or use defaults on the first run."""
@@ -64,6 +65,29 @@ def save_settings(settings):
     """Store settings chosen in the settings screen."""
     with open(SETTINGS_FILE, "w") as f:
         json.dump(settings, f)
+
+def load_sounds(settings):
+    """Load short effects only when sound is enabled."""
+    if not settings.get("sound"):
+        return {}
+    if not pygame.mixer.get_init():
+        try:
+            pygame.mixer.init()
+        except pygame.error:
+            return {}
+
+    sounds = {}
+    for name in ("eat", "powerup", "poison", "shield", "level", "gameover"):
+        path = os.path.join(SOUND_DIR, f"{name}.wav")
+        try:
+            sounds[name] = pygame.mixer.Sound(path)
+        except pygame.error:
+            pass
+    return sounds
+
+def play_sound(sounds, name):
+    if name in sounds:
+        sounds[name].play()
 
 def make_walls(level):
     """Build the border wall around the field."""
@@ -204,6 +228,7 @@ def new_game_state(settings):
         "paused":      False,
         "settings":    settings,
         "snake_color": tuple(settings["snake_color"]),
+        "sounds":      load_sounds(settings),
     }
 
 def draw_game(screen, state, fonts, personal_best):
@@ -313,19 +338,23 @@ def update_game(state):
     if hit_wall or hit_self:
         if state["shield"]:
             state["shield"] = False
+            play_sound(state["sounds"], "shield")
             # Shield cancels this tick instead of moving into the wall/body.
             return "alive"
+        play_sound(state["sounds"], "gameover")
         return "dead"
 
     state["snake"].insert(0, new_head)
 
     if state["poison"] and new_head == state["poison"]["pos"]:
         state["poison"] = None
+        play_sound(state["sounds"], "poison")
         # Remove extra tail cells because the new head was already inserted.
         for _ in range(3):
             if len(state["snake"]) > 1:
                 state["snake"].pop()
         if len(state["snake"]) <= 1:
+            play_sound(state["sounds"], "gameover")
             return "dead"
         return "alive"
 
@@ -342,6 +371,7 @@ def update_game(state):
             state["speed_mult"] = 1.0
             state["shield"] = True
             state["effect"] = None
+        play_sound(state["sounds"], "powerup")
         # Power-ups do not grow the snake.
         state["snake"].pop()
         return "alive"
@@ -352,6 +382,7 @@ def update_game(state):
             state["score"]     += food["pts"]
             state["food_eaten"] += 1
             state["foods"].remove(food)
+            play_sound(state["sounds"], "eat")
             ate = True
             new_food = spawn_food(state["walls"], state["snake"],
                                   state["foods"], state["poison"])
@@ -369,6 +400,7 @@ def update_game(state):
         state["food_eaten"] = 0
         state["level"]      += 1
         state["base_speed"] += 2
+        play_sound(state["sounds"], "level")
         state["walls"] = make_walls(state["level"])
         if state["level"] >= 3:
             state["walls"] = add_obstacles(state["walls"], state["snake"],
