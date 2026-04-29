@@ -183,15 +183,17 @@ def draw_toolbar():
     draw_button(save_button, "Save")
 
     status = f"Tool: {current_tool}   Size: {brush_size}px   Ctrl+S saves PNG"
-    if text_active:
+    text_color = (20, 20, 20)
+
+    # Show only one status line, otherwise the saved message overlaps the tool text.
+    if message and pygame.time.get_ticks() < message_until:
+        status = message
+        text_color = (0, 100, 0)
+    elif text_active:
         status += "   Type text, Enter confirms, Esc cancels"
 
-    status_text = status_font.render(status, True, (20, 20, 20))
+    status_text = status_font.render(status, True, text_color)
     screen.blit(status_text, (save_button.right + 18, 76))
-
-    if message and pygame.time.get_ticks() < message_until:
-        saved_text = small_font.render(message, True, (20, 20, 20))
-        screen.blit(saved_text, (SCREEN_WIDTH - saved_text.get_width() - 12, TOOLBAR_HEIGHT - 24))
 
 
 def save_canvas():
@@ -204,7 +206,7 @@ def save_canvas():
     path = os.path.join(SAVE_FOLDER, filename)
     pygame.image.save(canvas, path)
 
-    message = f"Saved: saved_images/{filename}"
+    message = f"Saved: {filename}"
     message_until = pygame.time.get_ticks() + 2500
 
 
